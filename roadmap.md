@@ -1,0 +1,4 @@
+- [ ] Build the four-tab student planner at the home screen
+- [ ] Add interactive class timetable editing for five periods and custom subject labels
+- [ ] Add exam planning, study schedule generation, and focus session logging
+- [ ] Verify the live preview and resolve any errors
