@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   ArrowRight,
@@ -147,7 +147,7 @@ function Index() {
   );
 }
 
-function TabButton({ active, icon, onClick, label, number }: { active: boolean; icon: React.ReactNode; onClick: () => void; label: string; number: string }) {
+function TabButton({ active, icon, onClick, label, number }: { active: boolean; icon: ReactNode; onClick: () => void; label: string; number: string }) {
   return <button onClick={onClick} className={`group flex min-h-20 items-center justify-between border-b-2 px-0 py-4 text-left transition-colors sm:px-3 ${active ? "border-pigment text-pigment" : "border-transparent text-secondary-ink hover:text-pigment"}`}>
     <span className="flex items-center gap-3"><span className="text-pigment [&_svg]:h-4 [&_svg]:w-4">{icon}</span><span className="mono-label text-[10px]">{label}</span></span><span className="mono-label text-muted">{number}</span>
   </button>;
@@ -208,9 +208,9 @@ function FocusSession({ days, selectedDay, setSelectedDay, currentClasses, subje
 
 function SectionHeading({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) { return <div className="max-w-2xl"><p className="mono-label text-pigment">{eyebrow}</p><h2 className="display-title mt-3 text-5xl leading-none sm:text-6xl">{title}</h2><p className="mt-5 max-w-xl text-sm leading-7 text-secondary-ink">{description}</p></div>; }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block"><span className="mono-label mb-2 block text-muted">{label}</span>{children}</label>; }
+function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="block"><span className="mono-label mb-2 block text-muted">{label}</span>{children}</label>; }
 
-function EmptyState({ icon, title, description, action }: { icon: React.ReactNode; title: string; description: string; action?: React.ReactNode }) { return <div className="mt-8 border-y hairline py-12"><div className="text-pigment [&_svg]:h-5 [&_svg]:w-5">{icon}</div><h3 className="display-title mt-5 text-4xl">{title}</h3><p className="mt-3 max-w-md text-sm leading-7 text-muted">{description}</p>{action && <div className="mt-6">{action}</div>}</div>; }
+function EmptyState({ icon, title, description, action }: { icon: ReactNode; title: string; description: string; action?: ReactNode }) { return <div className="mt-8 border-y hairline py-12"><div className="text-pigment [&_svg]:h-5 [&_svg]:w-5">{icon}</div><h3 className="display-title mt-5 text-4xl">{title}</h3><p className="mt-3 max-w-md text-sm leading-7 text-muted">{description}</p>{action && <div className="mt-6">{action}</div>}</div>; }
 
 function subjectName(code: string) { return subjects.find((subject) => subject.code === code)?.name ?? code; }
 function formatDate(date: string) { return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${date}T12:00:00`)); }
