@@ -41,7 +41,11 @@ const subjects = [
   { code: "SOCIAL PNCF", name: "Social" },
   { code: "ENGLISH PNCF", name: "English" },
   { code: "—", name: "Free period" },
+  { code: "HOLIDAY", name: "Holiday" },
 ];
+
+function holidayIndex(dayClasses: string[]) { const index = dayClasses.indexOf("HOLIDAY"); return index === -1 ? null : index; }
+function dayIsOff(dayClasses: string[]) { const index = holidayIndex(dayClasses); return index === null ? null : index === 0 ? "full" : "half"; }
 const initialTimetable: Record<Day, string[]> = {
   Monday: ["PRT", "BIO KP", "MPJ", "MLK", "CSM"],
   Tuesday: ["MLK", "PRT", "TELUGU/HINDI", "BIO KP", "ENGLISH PNCF"],
@@ -139,7 +143,7 @@ function Index() {
         <section className="pt-10">
           {activeTab === "classes" && <ClassTimetable timetable={timetable} selectedDay={selectedDay} setSelectedDay={setSelectedDay} updateClass={updateClass} />}
           {activeTab === "exams" && <ExamTimetable exams={exams} examSubject={examSubject} setExamSubject={setExamSubject} examDate={examDate} setExamDate={setExamDate} examSyllabus={examSyllabus} setExamSyllabus={setExamSyllabus} addExam={addExam} removeExam={(id) => setExams((current) => current.filter((exam) => exam.id !== id))} />}
-          {activeTab === "study" && <StudyPlan exams={exams} plan={studyPlan} setActiveTab={setActiveTab} />}
+          {activeTab === "study" && <StudyPlan exams={exams} plan={studyPlan} setActiveTab={setActiveTab} timetable={timetable} />}
           {activeTab === "focus" && <FocusSession days={days} selectedDay={selectedDay} setSelectedDay={setSelectedDay} currentClasses={currentClasses} subjectName={subjectName} focusSubject={focusSubject} setFocusSubject={setFocusSubject} focusHours={focusHours} setFocusHours={setFocusHours} focusNote={focusNote} setFocusNote={setFocusNote} addFocusLog={addFocusLog} focusLogs={focusLogs} />}
         </section>
       </div>
