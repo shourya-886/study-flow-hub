@@ -155,7 +155,7 @@ function TabButton({ active, icon, onClick, label, number }: { active: boolean; 
 
 function ClassTimetable({ timetable, selectedDay, setSelectedDay, updateClass }: { timetable: Record<Day, string[]>; selectedDay: Day; setSelectedDay: (day: Day) => void; updateClass: (day: Day, index: number, value: string) => void }) {
   return <div>
-    <SectionHeading eyebrow="Your week at a glance" title="Class timetable" description="Choose a day, then set the subject in each period. The times are shaped around your 08:00 to 16:30 school day." />
+    <SectionHeading eyebrow="Your week at a glance" title="Class timetable" description="Choose a day, then set the subject in each period. Every MPJ period is a shared one — 45 min of mental ability, 45 min of BIO KP — while BIO KP can also fill a full 1 hr 25 min period on its own." />
     <div className="mt-10 grid gap-10 lg:grid-cols-[1fr_260px]">
       <div className="overflow-x-auto border-y hairline">
         <div className="min-w-[760px]">
@@ -165,7 +165,7 @@ function ClassTimetable({ timetable, selectedDay, setSelectedDay, updateClass }:
           </div>
           {periods.map((period, index) => <div key={period.label} className="grid grid-cols-[112px_repeat(5,minmax(120px,1fr))] border-b hairline last:border-b-0">
             <div className="flex flex-col justify-center gap-1 p-4"><span className="display-title text-2xl text-ink">{period.label}</span><span className="mono-label text-[9px] text-muted">{period.time}</span></div>
-            {days.map((day) => <div key={day} className={`border-l hairline p-3 ${selectedDay === day ? "bg-secondary-ground/60" : ""}`}><select aria-label={`${day} period ${period.label}`} value={timetable[day][index]} onChange={(event) => updateClass(day, index, event.target.value)} className="w-full cursor-pointer border-b border-line bg-transparent py-2 font-mono text-xs tracking-[0.08em] text-ink outline-none focus:border-pigment">{subjects.map((subject) => <option key={subject.code} value={subject.code}>{subject.code}</option>)}</select><span className="mt-2 block text-xs text-muted">{subjectName(timetable[day][index])}</span></div>)}
+            {days.map((day) => <div key={day} className={`border-l hairline p-3 ${selectedDay === day ? "bg-secondary-ground/60" : ""}`}><select aria-label={`${day} period ${period.label}`} value={timetable[day][index]} onChange={(event) => updateClass(day, index, event.target.value)} className="w-full cursor-pointer border-b border-line bg-transparent py-2 font-mono text-xs tracking-[0.08em] text-ink outline-none focus:border-pigment">{subjects.map((subject) => <option key={subject.code} value={subject.code}>{subject.code}</option>)}</select><span className="mt-2 block text-xs text-muted">{subjectName(timetable[day][index])}</span>{timetable[day][index] === "MPJ" && <span className="mt-2 block border-t hairline pt-2 mono-label text-[9px] text-pigment">split · MPJ 45′ + BIO KP 45′</span>}</div>)}
           </div>)}
           <div className="grid grid-cols-[112px_1fr] bg-secondary-ground"><div className="p-4 mono-label text-muted">pause</div><p className="p-4 text-xs text-secondary-ink">10 min between periods · lunch 12:45 — 13:25 · 5 min flex at close</p></div>
         </div>
