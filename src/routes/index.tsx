@@ -176,7 +176,7 @@ function ClassTimetable({ timetable, selectedDay, setSelectedDay, updateClass }:
       </div>
       <aside className="border-t hairline pt-5 lg:border-l lg:border-t-0 lg:pl-7">
         <p className="mono-label text-pigment">Selected day</p><h2 className="display-title mt-3 text-4xl">{selectedDay}</h2>
-        <div className="mt-7 space-y-0 border-y hairline">{timetable[selectedDay].map((code, index) => <div key={`${code}-${index}`} className="flex items-center justify-between border-b hairline py-3 last:border-b-0"><span className="mono-label text-muted">{periods[index]!.label} / {periods[index]!.time.split(" ")[0]}</span><span className="text-sm text-ink">{code === "MPJ" ? "Mental ability / Biology (split)" : subjectName(code)}</span></div>)}</div>
+        <div className="mt-7 space-y-0 border-y hairline">{timetable[selectedDay].map((code, index) => <div key={`${code}-${index}`} className="flex items-center justify-between border-b hairline py-3 last:border-b-0"><span className="mono-label text-muted">{periods[index]!.label} / {periods[index]!.time.split(" ")[0]}</span><span className="text-sm text-ink">{(() => { const off = holidayIndex(timetable[selectedDay]); if (off !== null && index > off) return "Off — half day"; if (code === "HOLIDAY") return index === 0 ? "Holiday (full day)" : "Holiday — half day starts"; if (code === "MPJ") return "Mental ability / Biology (split)"; return subjectName(code); })()}</span></div>)}</div>
         <p className="mt-6 text-xs leading-6 text-muted">Your shorthand stays visible in the grid, while the full subject name keeps the list easy to scan. MPJ periods run as 45 min mental ability + 45 min BIO KP; a standalone BIO KP period gets the full 1 hr 25 min.</p>
       </aside>
     </div>
