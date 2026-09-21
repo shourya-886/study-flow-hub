@@ -2,3 +2,4 @@
 - [x] Add interactive class timetable editing for five periods and custom subject labels
 - [x] Add exam planning, study schedule generation, and focus session logging
 - [x] Verify the live preview and resolve any errors
+- [x] Import JSON timetables and show the home study table with clickable chapter details
