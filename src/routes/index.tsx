@@ -35,7 +35,7 @@ const periods = [
   { label: "04", time: "13:25 — 14:50" },
   { label: "05", time: "15:00 — 16:25" },
 ];
-const homeSlots = ["05:00 — 06:30", "19:30 — 20:30", "20:30 — 21:30", "21:30 — 22:30"];
+const homeSlots = ["05:00 — 06:30", "19:30 — 20:30", "20:30 — 21:30", "21:30 — 22:30", "22:30 — 23:00 · optional"];
 const subjects = [
   { code: "PRT", name: "Physics" },
   { code: "BIO KP", name: "Biology" },
