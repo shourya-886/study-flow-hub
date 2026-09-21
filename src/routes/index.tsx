@@ -25,7 +25,7 @@ type SplitPeriod = { time: string; subject: string };
 type ClassPeriod = { time: string; subject?: string; isSplit?: boolean; splitPeriods?: SplitPeriod[] };
 type ScheduleDetails = Record<Day, ClassPeriod[]>;
 type PlanItem = { exam: Exam; topic: string; day: number };
-type HomeCell = { slot: string; topics: PlanItem[]; note?: string };
+type HomeCell = { slot: string; topics: PlanItem[]; note?: string | undefined };
 
 const days: Day[] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 const periods = [
@@ -133,26 +133,28 @@ function parseScheduleJson(raw: string): { timetable: Record<Day, string[]>; det
   } catch {
     throw new Error("The JSON is not valid. Check commas, quotes, and brackets.");
   }
-  if (!isRecord(parsed) || !isRecord(parsed.schedule)) {
+  if (!isRecord(parsed) || !isRecord(parsed["schedule"])) {
     throw new Error("Add a top-level “schedule” object with Monday to Friday entries.");
   }
 
   const timetable = {} as Record<Day, string[]>;
   const details = {} as ScheduleDetails;
   for (const day of days) {
-    const dayData = parsed.schedule[day];
-    if (!isRecord(dayData) || !Array.isArray(dayData.periods)) {
+    const schedule = parsed["schedule"];
+    const dayData = isRecord(schedule) ? schedule[day] : undefined;
+    if (!isRecord(dayData) || !Array.isArray(dayData["periods"])) {
       throw new Error(`${day} needs an “isHoliday” value and a “periods” array.`);
     }
-    const isHoliday = dayData.isHoliday === true;
-    if (!isHoliday && dayData.periods.length > periods.length) {
+    const isHoliday = dayData["isHoliday"] === true;
+    const sourcePeriods = dayData["periods"];
+    if (!isHoliday && Array.isArray(sourcePeriods) && sourcePeriods.length > periods.length) {
       throw new Error(`${day} has more than five periods.`);
     }
 
     const dayDetails: ClassPeriod[] = [];
     const dayClasses: string[] = [];
     for (let index = 0; index < periods.length; index += 1) {
-      const source = dayData.periods[index];
+      const source = sourcePeriods[index];
       if (isHoliday) {
         dayDetails.push({ time: periods[index]?.time ?? "", subject: "HOLIDAY" });
         dayClasses.push("HOLIDAY");
@@ -163,22 +165,23 @@ function parseScheduleJson(raw: string): { timetable: Record<Day, string[]>; det
         dayClasses.push("—");
         continue;
       }
-      const time = typeof source.time === "string" ? source.time : periods[index]?.time ?? "";
-      if (source.isSplit === true) {
-        if (!Array.isArray(source.splitPeriods) || source.splitPeriods.length === 0) {
+      const time = typeof source["time"] === "string" ? source["time"] : periods[index]?.time ?? "";
+      if (source["isSplit"] === true) {
+        const rawSplitPeriods = source["splitPeriods"];
+        if (!Array.isArray(rawSplitPeriods) || rawSplitPeriods.length === 0) {
           throw new Error(`${day} period ${index + 1} needs splitPeriods.`);
         }
-        const splitPeriods: SplitPeriod[] = source.splitPeriods.map((item, splitIndex) => {
-          if (!isRecord(item) || typeof item.time !== "string" || typeof item.subject !== "string") {
+        const splitPeriods: SplitPeriod[] = rawSplitPeriods.map((item, splitIndex) => {
+          if (!isRecord(item) || typeof item["time"] !== "string" || typeof item["subject"] !== "string") {
             throw new Error(`${day} split period ${splitIndex + 1} is missing time or subject.`);
           }
-          return { time: item.time, subject: mapSubject(item.subject) };
+          return { time: item["time"], subject: mapSubject(item["subject"]) };
         });
         dayDetails.push({ time, subject: splitPeriods[0]?.subject ?? "—", isSplit: true, splitPeriods });
         dayClasses.push(splitPeriods[0]?.subject ?? "—");
       } else {
-        if (typeof source.subject !== "string") throw new Error(`${day} period ${index + 1} needs a subject.`);
-        const subject = mapSubject(source.subject);
+        if (typeof source["subject"] !== "string") throw new Error(`${day} period ${index + 1} needs a subject.`);
+        const subject = mapSubject(source["subject"]);
         dayDetails.push({ time, subject });
         dayClasses.push(subject);
       }
