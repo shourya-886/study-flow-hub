@@ -25,7 +25,7 @@ type SplitPeriod = { time: string; subject: string };
 type ClassPeriod = { time: string; subject?: string; isSplit?: boolean; splitPeriods?: SplitPeriod[] };
 type ScheduleDetails = Record<Day, ClassPeriod[]>;
 type PlanItem = { exam: Exam; topic: string; day: number };
-type HomeCell = { slot: string; topics: PlanItem[]; note?: string };
+type HomeCell = { slot: string; topics: PlanItem[]; note?: string | undefined };
 
 const days: Day[] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 const periods = [
@@ -35,7 +35,7 @@ const periods = [
   { label: "04", time: "13:25 — 14:50" },
   { label: "05", time: "15:00 — 16:25" },
 ];
-const homeSlots = ["05:00 — 06:30", "19:30 — 20:30", "20:30 — 21:30", "21:30 — 22:30"];
+const homeSlots = ["05:00 — 06:30", "19:30 — 20:30", "20:30 — 21:30", "21:30 — 22:30", "22:30 — 23:00 · optional"];
 const subjects = [
   { code: "PRT", name: "Physics" },
   { code: "BIO KP", name: "Biology" },
@@ -133,26 +133,28 @@ function parseScheduleJson(raw: string): { timetable: Record<Day, string[]>; det
   } catch {
     throw new Error("The JSON is not valid. Check commas, quotes, and brackets.");
   }
-  if (!isRecord(parsed) || !isRecord(parsed.schedule)) {
+  if (!isRecord(parsed) || !isRecord(parsed["schedule"])) {
     throw new Error("Add a top-level “schedule” object with Monday to Friday entries.");
   }
 
   const timetable = {} as Record<Day, string[]>;
   const details = {} as ScheduleDetails;
   for (const day of days) {
-    const dayData = parsed.schedule[day];
-    if (!isRecord(dayData) || !Array.isArray(dayData.periods)) {
+    const schedule = parsed["schedule"];
+    const dayData = isRecord(schedule) ? schedule[day] : undefined;
+    if (!isRecord(dayData) || !Array.isArray(dayData["periods"])) {
       throw new Error(`${day} needs an “isHoliday” value and a “periods” array.`);
     }
-    const isHoliday = dayData.isHoliday === true;
-    if (!isHoliday && dayData.periods.length > periods.length) {
+    const isHoliday = dayData["isHoliday"] === true;
+    const sourcePeriods = dayData["periods"];
+    if (!isHoliday && Array.isArray(sourcePeriods) && sourcePeriods.length > periods.length) {
       throw new Error(`${day} has more than five periods.`);
     }
 
     const dayDetails: ClassPeriod[] = [];
     const dayClasses: string[] = [];
     for (let index = 0; index < periods.length; index += 1) {
-      const source = dayData.periods[index];
+      const source = sourcePeriods[index];
       if (isHoliday) {
         dayDetails.push({ time: periods[index]?.time ?? "", subject: "HOLIDAY" });
         dayClasses.push("HOLIDAY");
@@ -163,22 +165,23 @@ function parseScheduleJson(raw: string): { timetable: Record<Day, string[]>; det
         dayClasses.push("—");
         continue;
       }
-      const time = typeof source.time === "string" ? source.time : periods[index]?.time ?? "";
-      if (source.isSplit === true) {
-        if (!Array.isArray(source.splitPeriods) || source.splitPeriods.length === 0) {
+      const time = typeof source["time"] === "string" ? source["time"] : periods[index]?.time ?? "";
+      if (source["isSplit"] === true) {
+        const rawSplitPeriods = source["splitPeriods"];
+        if (!Array.isArray(rawSplitPeriods) || rawSplitPeriods.length === 0) {
           throw new Error(`${day} period ${index + 1} needs splitPeriods.`);
         }
-        const splitPeriods: SplitPeriod[] = source.splitPeriods.map((item, splitIndex) => {
-          if (!isRecord(item) || typeof item.time !== "string" || typeof item.subject !== "string") {
+        const splitPeriods: SplitPeriod[] = rawSplitPeriods.map((item, splitIndex) => {
+          if (!isRecord(item) || typeof item["time"] !== "string" || typeof item["subject"] !== "string") {
             throw new Error(`${day} split period ${splitIndex + 1} is missing time or subject.`);
           }
-          return { time: item.time, subject: mapSubject(item.subject) };
+          return { time: item["time"], subject: mapSubject(item["subject"]) };
         });
         dayDetails.push({ time, subject: splitPeriods[0]?.subject ?? "—", isSplit: true, splitPeriods });
         dayClasses.push(splitPeriods[0]?.subject ?? "—");
       } else {
-        if (typeof source.subject !== "string") throw new Error(`${day} period ${index + 1} needs a subject.`);
-        const subject = mapSubject(source.subject);
+        if (typeof source["subject"] !== "string") throw new Error(`${day} period ${index + 1} needs a subject.`);
+        const subject = mapSubject(source["subject"]);
         dayDetails.push({ time, subject });
         dayClasses.push(subject);
       }
@@ -348,7 +351,8 @@ function StudyPlan({ exams, plan, setActiveTab, timetable }: { exams: Exam[]; pl
 
   return <div><SectionHeading eyebrow="From chapters to action" title="Home timetable" description="Your study window is 05:00–06:30, then 19:30–22:30. Click any cell to see the chapters assigned there." />
     {offDays.length > 0 && <div className="mt-8 border-y hairline py-5"><p className="mono-label text-pigment">Home study / 3 hours</p><p className="mt-3 text-xs leading-6 text-secondary-ink">{offDays.map((day) => `${day} · ${dayIsOff(timetable[day] ?? []) === "full" ? "full holiday" : "half day"}`).join("  /  ")}</p></div>}
-    {exams.length === 0 ? <EmptyState icon={<Sparkles />} title="Your timetable will appear here" description="Start by adding an exam with its syllabus. Each chapter will become a clickable study cell." action={<Button variant="outline" onClick={() => setActiveTab("exams")}>Add an exam <ArrowRight /></Button>} /> : <div className="mt-10 overflow-x-auto border-y hairline"><div className="min-w-[880px]"><div className="grid grid-cols-[150px_repeat(5,minmax(145px,1fr))] border-b hairline bg-secondary-ground"><div className="p-4 mono-label text-muted">study window</div>{days.map((day) => <div key={day} className="border-l hairline p-4"><p className="mono-label text-muted">{day.slice(0, 3)}</p>{dayIsOff(timetable[day] ?? []) && <p className="mt-2 mono-label text-[9px] text-pigment">3h home study</p>}</div>)}</div>{homeSlots.map((slot, slotIndex) => <div key={slot} className="grid grid-cols-[150px_repeat(5,minmax(145px,1fr))] border-b hairline last:border-b-0"><div className="flex items-center p-4"><span className="mono-label text-[9px] text-muted">{slot}</span></div>{days.map((day) => { const cell = homeSchedule[day]?.[slotIndex] ?? { slot, topics: [] }; return <div key={day} className="border-l hairline p-2"><Button type="button" variant="ghost" onClick={() => setSelectedCell({ day, cell })} className="min-h-24 w-full flex-col items-start justify-start whitespace-normal p-3 text-left hover:bg-secondary-ground"><span className="text-xs text-ink">{cell.topics[0]?.topic ?? "Open study"}</span><span className="mt-2 mono-label text-[9px] text-muted">{cell.topics[0]?.exam.subject ?? cell.note ?? "No chapter assigned"}</span></Button></div>; })}</div>)}</div></div>}
+    {exams.length === 0 && <div className="mt-8 flex flex-wrap items-center justify-between gap-5 border-y hairline py-5"><div><p className="mono-label text-pigment">No chapters assigned</p><p className="mt-2 text-xs leading-6 text-muted">Add an exam to place its chapters into these study windows.</p></div><Button variant="outline" onClick={() => setActiveTab("exams")}>Add an exam <ArrowRight /></Button></div>}
+    <div className="mt-10 overflow-x-auto border-y hairline"><div className="min-w-[880px]"><div className="grid grid-cols-[150px_repeat(5,minmax(145px,1fr))] border-b hairline bg-secondary-ground"><div className="p-4 mono-label text-muted">study window</div>{days.map((day) => <div key={day} className="border-l hairline p-4"><p className="mono-label text-muted">{day.slice(0, 3)}</p>{dayIsOff(timetable[day] ?? []) && <p className="mt-2 mono-label text-[9px] text-pigment">3h home study</p>}</div>)}</div>{homeSlots.map((slot, slotIndex) => <div key={slot} className="grid grid-cols-[150px_repeat(5,minmax(145px,1fr))] border-b hairline last:border-b-0"><div className="flex items-center p-4"><span className="mono-label text-[9px] text-muted">{slot}</span></div>{days.map((day) => { const cell = homeSchedule[day]?.[slotIndex] ?? { slot, topics: [] }; return <div key={day} className="border-l hairline p-2"><Button type="button" variant="ghost" onClick={() => setSelectedCell({ day, cell })} className="min-h-24 w-full flex-col items-start justify-start whitespace-normal p-3 text-left hover:bg-secondary-ground"><span className="text-xs text-ink">{cell.topics[0]?.topic ?? "Open study"}</span><span className="mt-2 mono-label text-[9px] text-muted">{cell.topics[0]?.exam.subject ?? cell.note ?? "No chapter assigned"}</span></Button></div>; })}</div>)}</div></div>
     {selectedCell && <div role="presentation" className="fixed inset-0 z-50 flex items-center justify-center bg-ink/20 p-5" onClick={() => setSelectedCell(null)}><div role="dialog" aria-modal="true" aria-labelledby="chapter-window-title" className="w-full max-w-md border border-line bg-ground p-6" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between gap-4"><div><p className="mono-label text-pigment">{selectedCell.day} · {selectedCell.cell.slot}</p><h2 id="chapter-window-title" className="display-title mt-2 text-4xl">Chapters</h2></div><Button type="button" variant="ghost" size="icon" aria-label="Close chapters" onClick={() => setSelectedCell(null)}><X /></Button></div>{selectedCell.cell.topics.length > 0 ? <ul className="mt-6 divide-y hairline border-y hairline">{selectedCell.cell.topics.map((item) => <li key={`${item.exam.id}-${item.topic}`} className="py-4"><p className="text-sm text-ink">{item.topic}</p><p className="mt-2 mono-label text-[9px] text-muted">{item.exam.subject} · lesson {item.day}</p></li>)}</ul> : <p className="mt-6 border-y hairline py-6 text-sm leading-7 text-muted">No chapter is assigned to this study window yet. You can use it for revision or practice.</p>}{selectedCell.cell.note && <p className="mt-5 mono-label text-[10px] text-pigment">{selectedCell.cell.note}</p>}</div></div>}
   </div>;
 }
