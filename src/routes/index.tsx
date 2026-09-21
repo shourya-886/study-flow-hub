@@ -29,13 +29,13 @@ type HomeCell = { slot: string; topics: PlanItem[]; note?: string | undefined };
 
 const days: Day[] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 const periods = [
-  { label: "01", time: "08:00 — 09:25" },
-  { label: "02", time: "09:35 — 11:00" },
-  { label: "03", time: "11:10 — 12:35" },
-  { label: "04", time: "13:25 — 14:50" },
-  { label: "05", time: "15:00 — 16:25" },
+  { label: "01", time: "8:00 — 9:25 AM" },
+  { label: "02", time: "9:35 — 11:00 AM" },
+  { label: "03", time: "11:10 AM — 12:35 PM" },
+  { label: "04", time: "1:25 — 2:50 PM" },
+  { label: "05", time: "3:00 — 4:25 PM" },
 ];
-const homeSlots = ["05:00 — 06:30", "19:30 — 20:30", "20:30 — 21:30", "21:30 — 22:30", "22:30 — 23:00 · optional"];
+const homeSlots = ["5:00 — 6:30 AM", "7:30 — 8:30 PM", "8:30 — 9:30 PM", "9:30 — 10:30 PM", "10:30 — 11:00 PM · optional"];
 const subjects = [
   { code: "PRT", name: "Physics" },
   { code: "BIO KP", name: "Biology" },
@@ -266,7 +266,7 @@ function Index() {
       <header className="border-b hairline">
         <div className="mx-auto flex max-w-[1440px] items-center justify-between px-5 py-5 lg:px-10">
           <div className="flex items-center gap-3"><span className="flex h-8 w-8 items-center justify-center border border-ink text-sm font-semibold">SD</span><span className="mono-label text-secondary-ink">Study desk / 01</span></div>
-          <span className="mono-label hidden text-muted md:block">School week · 08:00 — 16:30</span>
+          <span className="mono-label hidden text-muted md:block">School week · 8:00 AM — 4:30 PM</span>
         </div>
       </header>
       <div className="mx-auto max-w-[1440px] px-5 pb-20 lg:px-10">
@@ -349,7 +349,7 @@ function StudyPlan({ exams, plan, setActiveTab, timetable }: { exams: Exam[]; pl
   }, [plan, timetable]);
   const offDays = days.filter((day) => dayIsOff(timetable[day] ?? []));
 
-  return <div><SectionHeading eyebrow="From chapters to action" title="Home timetable" description="Your study window is 05:00–06:30, then 19:30–22:30. Click any cell to see the chapters assigned there." />
+  return <div><SectionHeading eyebrow="From chapters to action" title="Home timetable" description="Your study window is 5:00–6:30 AM, then 7:30–10:30 PM. Click any cell to see the chapters assigned there." />
     {offDays.length > 0 && <div className="mt-8 border-y hairline py-5"><p className="mono-label text-pigment">Home study / 3 hours</p><p className="mt-3 text-xs leading-6 text-secondary-ink">{offDays.map((day) => `${day} · ${dayIsOff(timetable[day] ?? []) === "full" ? "full holiday" : "half day"}`).join("  /  ")}</p></div>}
     {exams.length === 0 && <div className="mt-8 flex flex-wrap items-center justify-between gap-5 border-y hairline py-5"><div><p className="mono-label text-pigment">No chapters assigned</p><p className="mt-2 text-xs leading-6 text-muted">Add an exam to place its chapters into these study windows.</p></div><Button variant="outline" onClick={() => setActiveTab("exams")}>Add an exam <ArrowRight /></Button></div>}
     <div className="mt-10 overflow-x-auto border-y hairline"><div className="min-w-[880px]"><div className="grid grid-cols-[150px_repeat(5,minmax(145px,1fr))] border-b hairline bg-secondary-ground"><div className="p-4 mono-label text-muted">study window</div>{days.map((day) => <div key={day} className="border-l hairline p-4"><p className="mono-label text-muted">{day.slice(0, 3)}</p>{dayIsOff(timetable[day] ?? []) && <p className="mt-2 mono-label text-[9px] text-pigment">3h home study</p>}</div>)}</div>{homeSlots.map((slot, slotIndex) => <div key={slot} className="grid grid-cols-[150px_repeat(5,minmax(145px,1fr))] border-b hairline last:border-b-0"><div className="flex items-center p-4"><span className="mono-label text-[9px] text-muted">{slot}</span></div>{days.map((day) => { const cell = homeSchedule[day]?.[slotIndex] ?? { slot, topics: [] }; return <div key={day} className="border-l hairline p-2"><Button type="button" variant="ghost" onClick={() => setSelectedCell({ day, cell })} className="min-h-24 w-full flex-col items-start justify-start whitespace-normal p-3 text-left hover:bg-secondary-ground"><span className="text-xs text-ink">{cell.topics[0]?.topic ?? "Open study"}</span><span className="mt-2 mono-label text-[9px] text-muted">{cell.topics[0]?.exam.subject ?? cell.note ?? "No chapter assigned"}</span></Button></div>; })}</div>)}</div></div>
