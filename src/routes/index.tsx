@@ -165,24 +165,33 @@ function buildHomeSchedule(exams: Exam[], timetable: Record<Day, string[]>) {
   for (const exam of orderedExams) {
     const topics = exam.syllabus.split(/[\n,]+/).map((topic) => topic.trim()).filter(Boolean);
     if (topics.length === 0) continue;
-    const examDay = dateFromKey(exam.date);
     const examEve = addDays(exam.date, -1);
     const available: Array<{ date: string; slot: number }> = [];
     for (let date = today; date < exam.date; date = addDays(date, 1)) {
       const weekday = dateFromKey(date).getDay();
-      const isOff = weekday === 0 || weekday === 6;
+      if (weekday === 0 || weekday === 6) continue;
       const weekdayName = dateFromKey(date).toLocaleDateString("en-US", { weekday: "long" }) as Day;
-      const isHoliday = !isOff && Boolean(dayIsOff(timetable[weekdayName] ?? []));
-      const slots = isHoliday ? homeSlots.length : homeSlots.length - 1;
-      for (let slot = 0; slot < slots; slot += 1) {
-        if (date === examEve && slot > 0) continue;
+      const isHoliday = Boolean(dayIsOff(timetable[weekdayName] ?? []));
+      for (let slot = 0; slot < homeSlots.length; slot += 1) {
+        if (date === examEve && slot === 4) continue;
         available.push({ date, slot });
       }
     }
     if (available.length > 0) {
+      const selected = new Set<number>();
       topics.forEach((topic, index) => {
-        const position = Math.min(available.length - 1, Math.floor((index * available.length) / topics.length));
-        const location = available[position];
+        const target = Math.min(available.length - 1, Math.floor(((index + 0.5) * available.length) / topics.length));
+        const choices = available.map((location, position) => ({ location, position })).filter(({ position }) => !selected.has(position));
+        const candidates = choices.length > 0 ? choices : available.map((location, position) => ({ location, position }));
+        candidates.sort((a, b) => {
+          const cellA = ensureDate(a.location.date)[a.location.slot];
+          const cellB = ensureDate(b.location.date)[b.location.slot];
+          return (cellA?.topics.length ?? 0) - (cellB?.topics.length ?? 0) || Math.abs(a.position - target) - Math.abs(b.position - target);
+        });
+        const chosen = candidates[0];
+        if (!chosen) return;
+        selected.add(chosen.position);
+        const location = chosen.location;
         if (!location) return;
         const cells = ensureDate(location.date);
         const cell = cells[location.slot];
@@ -191,12 +200,20 @@ function buildHomeSchedule(exams: Exam[], timetable: Record<Day, string[]>) {
     }
     if (examEve >= today) {
       const eveCells = ensureDate(examEve);
-      for (const slot of [1, 2, 3]) {
+      for (const slot of [1, 2, 3, 4]) {
         const cell = eveCells[slot];
         if (cell) cell.topics.push(...topics.map((topic, index) => ({ exam, topic, day: index + 1, date: examEve, revision: true })));
       }
     }
-    void examDay;
+    for (let date = today; date < exam.date; date = addDays(date, 1)) {
+      const weekday = dateFromKey(date).getDay();
+      if (weekday === 0 || weekday === 6) continue;
+      const weekdayName = dateFromKey(date).toLocaleDateString("en-US", { weekday: "long" }) as Day;
+      if (dayIsOff(timetable[weekdayName] ?? [])) {
+        const cells = ensureDate(date);
+        cells.forEach((cell) => { cell.note = "3 hours home study"; });
+      }
+    }
   }
   return result;
 }
@@ -298,12 +315,39 @@ function Index() {
   const [focusNote, setFocusNote] = useState("");
   const [jsonInput, setJsonInput] = useState(sampleJson);
   const [jsonError, setJsonError] = useState("");
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [storedDataLoaded, setStoredDataLoaded] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (raw) {
+        const saved: unknown = JSON.parse(raw);
+        if (isRecord(saved)) {
+          if (isRecord(saved["timetable"]) && days.every((day) => Array.isArray(saved["timetable"][day]))) setTimetable(saved["timetable"] as Record<Day, string[]>);
+          if (isRecord(saved["scheduleDetails"]) && days.every((day) => Array.isArray(saved["scheduleDetails"][day]))) setScheduleDetails(saved["scheduleDetails"] as ScheduleDetails);
+          if (Array.isArray(saved["exams"])) setExams(saved["exams"].filter(isRecord) as unknown as Exam[]);
+          if (Array.isArray(saved["focusLogs"])) setFocusLogs(saved["focusLogs"].filter(isRecord) as unknown as FocusLog[]);
+        }
+      }
+    } catch {
+      // Keep the built-in timetable if browser storage is unavailable or malformed.
+    }
+    setExamDate(localDateKey(new Date()));
+    setStoredDataLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!storedDataLoaded) return;
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify({ timetable, scheduleDetails, exams, focusLogs }));
+    } catch {
+      // Storage may be unavailable or full; the planner remains usable for this visit.
+    }
+  }, [timetable, scheduleDetails, exams, focusLogs, storedDataLoaded]);
 
   const currentClasses = timetable[selectedDay] ?? [];
-  const studyPlan = useMemo<PlanItem[]>(() => exams.flatMap((exam) => {
-    const topics = exam.syllabus.split(/[\n,]+/).map((topic) => topic.trim()).filter(Boolean);
-    return topics.map((topic, index) => ({ exam, topic, day: index + 1 }));
-  }), [exams]);
+  const studyPlan = useMemo<PlanItem[]>(() => exams.flatMap((exam) => exam.syllabus.split(/[\n,]+/).map((topic) => topic.trim()).filter(Boolean).map((topic, index) => ({ exam, topic, day: index + 1, date: "" }))), [exams]);
 
   function updateClass(day: Day, index: number, value: string) {
     setTimetable((current) => ({ ...current, [day]: (current[day] ?? []).map((subject, subjectIndex) => subjectIndex === index ? value : subject) }));
@@ -327,12 +371,12 @@ function Index() {
 
   function addExam() {
     if (!examSubject || !examDate) return;
-    setExams((current) => [...current, { id: Date.now(), subject: examSubject, date: examDate, syllabus: examSyllabus }]);
+    setExams((current) => [...current, { id: createId(), subject: examSubject, date: examDate, syllabus: examSyllabus }]);
     setExamSyllabus("");
   }
 
   function addFocusLog() {
-    setFocusLogs((current) => [...current, { id: Date.now(), subject: focusSubject, hours: focusHours, note: focusNote }]);
+    setFocusLogs((current) => [...current, { id: createId(), subject: focusSubject, hours: focusHours, note: focusNote }]);
     setFocusNote("");
   }
 
@@ -358,7 +402,7 @@ function Index() {
         <section className="pt-10">
           {activeTab === "classes" && <ClassTimetable timetable={timetable} details={scheduleDetails} selectedDay={selectedDay} setSelectedDay={setSelectedDay} updateClass={updateClass} jsonInput={jsonInput} setJsonInput={setJsonInput} jsonError={jsonError} importJson={importJson} />}
           {activeTab === "exams" && <ExamTimetable exams={exams} examSubject={examSubject} setExamSubject={setExamSubject} examDate={examDate} setExamDate={setExamDate} examSyllabus={examSyllabus} setExamSyllabus={setExamSyllabus} addExam={addExam} removeExam={(id) => setExams((current) => current.filter((exam) => exam.id !== id))} />}
-          {activeTab === "study" && <StudyPlan exams={exams} plan={studyPlan} setActiveTab={setActiveTab} timetable={timetable} />}
+          {activeTab === "study" && <StudyPlan exams={exams} plan={studyPlan} setActiveTab={setActiveTab} timetable={timetable} weekOffset={weekOffset} setWeekOffset={setWeekOffset} />}
           {activeTab === "focus" && <FocusSession days={days} selectedDay={selectedDay} setSelectedDay={setSelectedDay} currentClasses={currentClasses} subjectName={subjectName} focusSubject={focusSubject} setFocusSubject={setFocusSubject} focusHours={focusHours} setFocusHours={setFocusHours} focusNote={focusNote} setFocusNote={setFocusNote} addFocusLog={addFocusLog} focusLogs={focusLogs} />}
         </section>
       </div>
