@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   ArrowRight,
@@ -19,12 +19,12 @@ import { Button } from "@/components/ui/button";
 
 type Day = "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday";
 type Tab = "classes" | "exams" | "study" | "focus";
-type Exam = { id: number; subject: string; date: string; syllabus: string };
-type FocusLog = { id: number; subject: string; hours: string; note: string };
+type Exam = { id: string; subject: string; date: string; syllabus: string };
+type FocusLog = { id: string; subject: string; hours: string; note: string };
 type SplitPeriod = { time: string; subject: string };
 type ClassPeriod = { time: string; subject?: string; isSplit?: boolean; splitPeriods?: SplitPeriod[] };
 type ScheduleDetails = Record<Day, ClassPeriod[]>;
-type PlanItem = { exam: Exam; topic: string; day: number };
+type PlanItem = { exam: Exam; topic: string; day: number; date: string; revision?: boolean };
 type HomeCell = { slot: string; topics: PlanItem[]; note?: string | undefined };
 
 const days: Day[] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
@@ -104,26 +104,118 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function mapSubject(raw: string) {
-  const normalized = raw.trim().toUpperCase().replace(/\s+/g, " ");
-  const aliases: Record<string, string> = {
-    PRT: "PRT",
-    "BIO KP": "BIO KP",
-    MPJ: "MPJ",
-    MLK: "MLK",
-    "TELUGU / HINDI": "TELUGU/HINDI",
-    "TELUGU/HINDI": "TELUGU/HINDI",
-    CSM: "CSM",
-    "SOCIAL PNCF": "SOCIAL PNCF",
-    "ENGLISH PNCF": "ENGLISH PNCF",
-    "FREE / STUDY": "—",
-    "FREE/STUDY": "—",
-    FREE: "—",
-    "—": "—",
-    HOLIDAY: "HOLIDAY",
+  const normalized = raw.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "");
+  const aliases: Array<{ value: string; code: string }> = [
+    { value: "PRT", code: "PRT" }, { value: "PHYSICS", code: "PRT" },
+    { value: "BIOKP", code: "BIO KP" }, { value: "BIOLOGY", code: "BIO KP" },
+    { value: "MPJ", code: "MPJ" }, { value: "MENTALABILITY", code: "MPJ" },
+    { value: "MLK", code: "MLK" }, { value: "MATHS", code: "MLK" }, { value: "MATH", code: "MLK" },
+    { value: "TELUGUHINDI", code: "TELUGU/HINDI" }, { value: "TELUGU", code: "TELUGU/HINDI" }, { value: "HINDI", code: "TELUGU/HINDI" }, { value: "LANGUAGE", code: "TELUGU/HINDI" },
+    { value: "CSM", code: "CSM" }, { value: "CHEMISTRY", code: "CSM" },
+    { value: "SOCIALPNCF", code: "SOCIAL PNCF" }, { value: "SOCIAL", code: "SOCIAL PNCF" },
+    { value: "ENGLISH PNCF", code: "ENGLISH PNCF" }, { value: "ENGLISH", code: "ENGLISH PNCF" },
+    { value: "FREESTUDY", code: "—" }, { value: "FREE", code: "—" }, { value: "STUDY", code: "—" },
+    { value: "HOLIDAY", code: "HOLIDAY" },
+  ].map((entry) => ({ ...entry, value: entry.value.replace(/[^A-Z0-9]+/g, "") }));
+  if (normalized === "") throw new Error("Subject cannot be empty.");
+  const exact = aliases.find((entry) => entry.value === normalized);
+  if (exact) return exact.code;
+  const candidates = aliases
+    .filter((entry) => normalized.length >= 2 && (entry.value.includes(normalized) || normalized.includes(entry.value)))
+    .sort((a, b) => {
+      const score = (value: string) => value.startsWith(normalized) ? 2 : normalized.startsWith(value) ? 1 : 0;
+      return score(b.value) - score(a.value) || b.value.length - a.value.length;
+    });
+  if (candidates[0]) return candidates[0].code;
+  throw new Error(`Unknown subject “${raw}”. Try a subject code or name.`);
+}
+
+const storageKey = "study-desk-planner-v1";
+
+function createId() {
+  return globalThis.crypto.randomUUID();
+}
+
+function localDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function dateFromKey(key: string) {
+  return new Date(`${key}T12:00:00`);
+}
+
+function addDays(key: string, count: number) {
+  const date = dateFromKey(key);
+  date.setDate(date.getDate() + count);
+  return localDateKey(date);
+}
+
+function buildHomeSchedule(exams: Exam[], timetable: Record<Day, string[]>) {
+  const today = localDateKey(new Date());
+  const result = new Map<string, HomeCell[]>();
+  const ensureDate = (date: string) => {
+    if (!result.has(date)) result.set(date, homeSlots.map((slot) => ({ slot, topics: [] })));
+    return result.get(date) ?? [];
   };
-  const code = aliases[normalized];
-  if (!code) throw new Error(`Unknown subject “${raw}”.`);
-  return code;
+  const orderedExams = [...exams].filter((exam) => exam.date >= today).sort((a, b) => a.date.localeCompare(b.date));
+
+  for (const exam of orderedExams) {
+    const topics = exam.syllabus.split(/[\n,]+/).map((topic) => topic.trim()).filter(Boolean);
+    if (topics.length === 0) continue;
+    const examEve = addDays(exam.date, -1);
+    const available: Array<{ date: string; slot: number }> = [];
+    for (let date = today; date < exam.date; date = addDays(date, 1)) {
+      const weekday = dateFromKey(date).getDay();
+      if (weekday === 0 || weekday === 6) continue;
+      const weekdayName = dateFromKey(date).toLocaleDateString("en-US", { weekday: "long" }) as Day;
+      const isHoliday = Boolean(dayIsOff(timetable[weekdayName] ?? []));
+      for (let slot = 0; slot < homeSlots.length; slot += 1) {
+        if (date === examEve && slot === 4) continue;
+        available.push({ date, slot });
+      }
+    }
+    if (available.length > 0) {
+      const selected = new Set<number>();
+      topics.forEach((topic, index) => {
+        const target = Math.min(available.length - 1, Math.floor(((index + 0.5) * available.length) / topics.length));
+        const choices = available.map((location, position) => ({ location, position })).filter(({ position }) => !selected.has(position));
+        const candidates = choices.length > 0 ? choices : available.map((location, position) => ({ location, position }));
+        candidates.sort((a, b) => {
+          const cellA = ensureDate(a.location.date)[a.location.slot];
+          const cellB = ensureDate(b.location.date)[b.location.slot];
+          return (cellA?.topics.length ?? 0) - (cellB?.topics.length ?? 0) || Math.abs(a.position - target) - Math.abs(b.position - target);
+        });
+        const chosen = candidates[0];
+        if (!chosen) return;
+        selected.add(chosen.position);
+        const location = chosen.location;
+        if (!location) return;
+        const cells = ensureDate(location.date);
+        const cell = cells[location.slot];
+        if (cell) cell.topics.push({ exam, topic, day: index + 1, date: location.date });
+      });
+    }
+    if (examEve >= today) {
+      const eveCells = ensureDate(examEve);
+      for (const slot of [1, 2, 3, 4]) {
+        const cell = eveCells[slot];
+        if (cell) cell.topics.push(...topics.map((topic, index) => ({ exam, topic, day: index + 1, date: examEve, revision: true })));
+      }
+    }
+    for (let date = today; date < exam.date; date = addDays(date, 1)) {
+      const weekday = dateFromKey(date).getDay();
+      if (weekday === 0 || weekday === 6) continue;
+      const weekdayName = dateFromKey(date).toLocaleDateString("en-US", { weekday: "long" }) as Day;
+      if (dayIsOff(timetable[weekdayName] ?? [])) {
+        const cells = ensureDate(date);
+        cells.forEach((cell) => { cell.note = "3 hours home study"; });
+      }
+    }
+  }
+  return result;
 }
 
 function parseScheduleJson(raw: string): { timetable: Record<Day, string[]>; details: ScheduleDetails } {
@@ -223,12 +315,39 @@ function Index() {
   const [focusNote, setFocusNote] = useState("");
   const [jsonInput, setJsonInput] = useState(sampleJson);
   const [jsonError, setJsonError] = useState("");
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [storedDataLoaded, setStoredDataLoaded] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (raw) {
+        const saved: unknown = JSON.parse(raw);
+        if (isRecord(saved)) {
+          if (isRecord(saved["timetable"]) && days.every((day) => Array.isArray(saved["timetable"][day]))) setTimetable(saved["timetable"] as Record<Day, string[]>);
+          if (isRecord(saved["scheduleDetails"]) && days.every((day) => Array.isArray(saved["scheduleDetails"][day]))) setScheduleDetails(saved["scheduleDetails"] as ScheduleDetails);
+          if (Array.isArray(saved["exams"])) setExams(saved["exams"].filter(isRecord) as unknown as Exam[]);
+          if (Array.isArray(saved["focusLogs"])) setFocusLogs(saved["focusLogs"].filter(isRecord) as unknown as FocusLog[]);
+        }
+      }
+    } catch {
+      // Keep the built-in timetable if browser storage is unavailable or malformed.
+    }
+    setExamDate(localDateKey(new Date()));
+    setStoredDataLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!storedDataLoaded) return;
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify({ timetable, scheduleDetails, exams, focusLogs }));
+    } catch {
+      // Storage may be unavailable or full; the planner remains usable for this visit.
+    }
+  }, [timetable, scheduleDetails, exams, focusLogs, storedDataLoaded]);
 
   const currentClasses = timetable[selectedDay] ?? [];
-  const studyPlan = useMemo<PlanItem[]>(() => exams.flatMap((exam) => {
-    const topics = exam.syllabus.split(/[\n,]+/).map((topic) => topic.trim()).filter(Boolean);
-    return topics.map((topic, index) => ({ exam, topic, day: index + 1 }));
-  }), [exams]);
+  const studyPlan = useMemo<PlanItem[]>(() => exams.flatMap((exam) => exam.syllabus.split(/[\n,]+/).map((topic) => topic.trim()).filter(Boolean).map((topic, index) => ({ exam, topic, day: index + 1, date: "" }))), [exams]);
 
   function updateClass(day: Day, index: number, value: string) {
     setTimetable((current) => ({ ...current, [day]: (current[day] ?? []).map((subject, subjectIndex) => subjectIndex === index ? value : subject) }));
@@ -252,12 +371,12 @@ function Index() {
 
   function addExam() {
     if (!examSubject || !examDate) return;
-    setExams((current) => [...current, { id: Date.now(), subject: examSubject, date: examDate, syllabus: examSyllabus }]);
+    setExams((current) => [...current, { id: createId(), subject: examSubject, date: examDate, syllabus: examSyllabus }]);
     setExamSyllabus("");
   }
 
   function addFocusLog() {
-    setFocusLogs((current) => [...current, { id: Date.now(), subject: focusSubject, hours: focusHours, note: focusNote }]);
+    setFocusLogs((current) => [...current, { id: createId(), subject: focusSubject, hours: focusHours, note: focusNote }]);
     setFocusNote("");
   }
 
@@ -283,7 +402,7 @@ function Index() {
         <section className="pt-10">
           {activeTab === "classes" && <ClassTimetable timetable={timetable} details={scheduleDetails} selectedDay={selectedDay} setSelectedDay={setSelectedDay} updateClass={updateClass} jsonInput={jsonInput} setJsonInput={setJsonInput} jsonError={jsonError} importJson={importJson} />}
           {activeTab === "exams" && <ExamTimetable exams={exams} examSubject={examSubject} setExamSubject={setExamSubject} examDate={examDate} setExamDate={setExamDate} examSyllabus={examSyllabus} setExamSyllabus={setExamSyllabus} addExam={addExam} removeExam={(id) => setExams((current) => current.filter((exam) => exam.id !== id))} />}
-          {activeTab === "study" && <StudyPlan exams={exams} plan={studyPlan} setActiveTab={setActiveTab} timetable={timetable} />}
+          {activeTab === "study" && <StudyPlan exams={exams} plan={studyPlan} setActiveTab={setActiveTab} timetable={timetable} weekOffset={weekOffset} setWeekOffset={setWeekOffset} />}
           {activeTab === "focus" && <FocusSession days={days} selectedDay={selectedDay} setSelectedDay={setSelectedDay} currentClasses={currentClasses} subjectName={subjectName} focusSubject={focusSubject} setFocusSubject={setFocusSubject} focusHours={focusHours} setFocusHours={setFocusHours} focusNote={focusNote} setFocusNote={setFocusNote} addFocusLog={addFocusLog} focusLogs={focusLogs} />}
         </section>
       </div>
