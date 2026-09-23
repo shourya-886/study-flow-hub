@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   ArrowRight,
@@ -19,12 +19,12 @@ import { Button } from "@/components/ui/button";
 
 type Day = "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday";
 type Tab = "classes" | "exams" | "study" | "focus";
-type Exam = { id: number; subject: string; date: string; syllabus: string };
-type FocusLog = { id: number; subject: string; hours: string; note: string };
+type Exam = { id: string; subject: string; date: string; syllabus: string };
+type FocusLog = { id: string; subject: string; hours: string; note: string };
 type SplitPeriod = { time: string; subject: string };
 type ClassPeriod = { time: string; subject?: string; isSplit?: boolean; splitPeriods?: SplitPeriod[] };
 type ScheduleDetails = Record<Day, ClassPeriod[]>;
-type PlanItem = { exam: Exam; topic: string; day: number };
+type PlanItem = { exam: Exam; topic: string; day: number; date: string; revision?: boolean };
 type HomeCell = { slot: string; topics: PlanItem[]; note?: string | undefined };
 
 const days: Day[] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
@@ -104,26 +104,101 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function mapSubject(raw: string) {
-  const normalized = raw.trim().toUpperCase().replace(/\s+/g, " ");
-  const aliases: Record<string, string> = {
-    PRT: "PRT",
-    "BIO KP": "BIO KP",
-    MPJ: "MPJ",
-    MLK: "MLK",
-    "TELUGU / HINDI": "TELUGU/HINDI",
-    "TELUGU/HINDI": "TELUGU/HINDI",
-    CSM: "CSM",
-    "SOCIAL PNCF": "SOCIAL PNCF",
-    "ENGLISH PNCF": "ENGLISH PNCF",
-    "FREE / STUDY": "—",
-    "FREE/STUDY": "—",
-    FREE: "—",
-    "—": "—",
-    HOLIDAY: "HOLIDAY",
+  const normalized = raw.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "");
+  const aliases: Array<{ value: string; code: string }> = [
+    { value: "PRT", code: "PRT" }, { value: "PHYSICS", code: "PRT" },
+    { value: "BIOKP", code: "BIO KP" }, { value: "BIOLOGY", code: "BIO KP" },
+    { value: "MPJ", code: "MPJ" }, { value: "MENTALABILITY", code: "MPJ" },
+    { value: "MLK", code: "MLK" }, { value: "MATHS", code: "MLK" }, { value: "MATH", code: "MLK" },
+    { value: "TELUGUHINDI", code: "TELUGU/HINDI" }, { value: "TELUGU", code: "TELUGU/HINDI" }, { value: "HINDI", code: "TELUGU/HINDI" }, { value: "LANGUAGE", code: "TELUGU/HINDI" },
+    { value: "CSM", code: "CSM" }, { value: "CHEMISTRY", code: "CSM" },
+    { value: "SOCIALPNCF", code: "SOCIAL PNCF" }, { value: "SOCIAL", code: "SOCIAL PNCF" },
+    { value: "ENGLISH PNCF", code: "ENGLISH PNCF" }, { value: "ENGLISH", code: "ENGLISH PNCF" },
+    { value: "FREESTUDY", code: "—" }, { value: "FREE", code: "—" }, { value: "STUDY", code: "—" },
+    { value: "HOLIDAY", code: "HOLIDAY" },
+  ].map((entry) => ({ ...entry, value: entry.value.replace(/[^A-Z0-9]+/g, "") }));
+  if (normalized === "") throw new Error("Subject cannot be empty.");
+  const exact = aliases.find((entry) => entry.value === normalized);
+  if (exact) return exact.code;
+  const candidates = aliases
+    .filter((entry) => normalized.length >= 2 && (entry.value.includes(normalized) || normalized.includes(entry.value)))
+    .sort((a, b) => {
+      const score = (value: string) => value.startsWith(normalized) ? 2 : normalized.startsWith(value) ? 1 : 0;
+      return score(b.value) - score(a.value) || b.value.length - a.value.length;
+    });
+  if (candidates[0]) return candidates[0].code;
+  throw new Error(`Unknown subject “${raw}”. Try a subject code or name.`);
+}
+
+const storageKey = "study-desk-planner-v1";
+
+function createId() {
+  return globalThis.crypto.randomUUID();
+}
+
+function localDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function dateFromKey(key: string) {
+  return new Date(`${key}T12:00:00`);
+}
+
+function addDays(key: string, count: number) {
+  const date = dateFromKey(key);
+  date.setDate(date.getDate() + count);
+  return localDateKey(date);
+}
+
+function buildHomeSchedule(exams: Exam[], timetable: Record<Day, string[]>) {
+  const today = localDateKey(new Date());
+  const result = new Map<string, HomeCell[]>();
+  const ensureDate = (date: string) => {
+    if (!result.has(date)) result.set(date, homeSlots.map((slot) => ({ slot, topics: [] })));
+    return result.get(date) ?? [];
   };
-  const code = aliases[normalized];
-  if (!code) throw new Error(`Unknown subject “${raw}”.`);
-  return code;
+  const orderedExams = [...exams].filter((exam) => exam.date >= today).sort((a, b) => a.date.localeCompare(b.date));
+
+  for (const exam of orderedExams) {
+    const topics = exam.syllabus.split(/[\n,]+/).map((topic) => topic.trim()).filter(Boolean);
+    if (topics.length === 0) continue;
+    const examDay = dateFromKey(exam.date);
+    const examEve = addDays(exam.date, -1);
+    const available: Array<{ date: string; slot: number }> = [];
+    for (let date = today; date < exam.date; date = addDays(date, 1)) {
+      const weekday = dateFromKey(date).getDay();
+      const isOff = weekday === 0 || weekday === 6;
+      const weekdayName = dateFromKey(date).toLocaleDateString("en-US", { weekday: "long" }) as Day;
+      const isHoliday = !isOff && Boolean(dayIsOff(timetable[weekdayName] ?? []));
+      const slots = isHoliday ? homeSlots.length : homeSlots.length - 1;
+      for (let slot = 0; slot < slots; slot += 1) {
+        if (date === examEve && slot > 0) continue;
+        available.push({ date, slot });
+      }
+    }
+    if (available.length > 0) {
+      topics.forEach((topic, index) => {
+        const position = Math.min(available.length - 1, Math.floor((index * available.length) / topics.length));
+        const location = available[position];
+        if (!location) return;
+        const cells = ensureDate(location.date);
+        const cell = cells[location.slot];
+        if (cell) cell.topics.push({ exam, topic, day: index + 1, date: location.date });
+      });
+    }
+    if (examEve >= today) {
+      const eveCells = ensureDate(examEve);
+      for (const slot of [1, 2, 3]) {
+        const cell = eveCells[slot];
+        if (cell) cell.topics.push(...topics.map((topic, index) => ({ exam, topic, day: index + 1, date: examEve, revision: true })));
+      }
+    }
+    void examDay;
+  }
+  return result;
 }
 
 function parseScheduleJson(raw: string): { timetable: Record<Day, string[]>; details: ScheduleDetails } {
