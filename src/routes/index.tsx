@@ -348,10 +348,10 @@ function Index() {
       if (raw) {
         const saved: unknown = JSON.parse(raw);
         if (isRecord(saved)) {
-          if (isRecord(saved["timetable"]) && days.every((day) => Array.isArray(saved["timetable"][day]))) setTimetable(saved["timetable"] as Record<Day, string[]>);
-          if (isRecord(saved["scheduleDetails"]) && days.every((day) => Array.isArray(saved["scheduleDetails"][day]))) setScheduleDetails(saved["scheduleDetails"] as ScheduleDetails);
-          if (Array.isArray(saved["exams"])) setExams(saved["exams"].filter(isRecord) as unknown as Exam[]);
-          if (Array.isArray(saved["focusLogs"])) setFocusLogs(saved["focusLogs"].filter(isRecord) as unknown as FocusLog[]);
+          if (isTimetable(saved["timetable"])) setTimetable(saved["timetable"]);
+          if (isScheduleDetails(saved["scheduleDetails"])) setScheduleDetails(saved["scheduleDetails"]);
+          if (Array.isArray(saved["exams"])) setExams(saved["exams"].filter(isExam));
+          if (Array.isArray(saved["focusLogs"])) setFocusLogs(saved["focusLogs"].filter(isFocusLog));
         }
       }
     } catch {
@@ -371,8 +371,6 @@ function Index() {
   }, [timetable, scheduleDetails, exams, focusLogs, storedDataLoaded]);
 
   const currentClasses = timetable[selectedDay] ?? [];
-  const studyPlan = useMemo<PlanItem[]>(() => exams.flatMap((exam) => exam.syllabus.split(/[\n,]+/).map((topic) => topic.trim()).filter(Boolean).map((topic, index) => ({ exam, topic, day: index + 1, date: "" }))), [exams]);
-
   function updateClass(day: Day, index: number, value: string) {
     setTimetable((current) => ({ ...current, [day]: (current[day] ?? []).map((subject, subjectIndex) => subjectIndex === index ? value : subject) }));
     setScheduleDetails((current) => ({
@@ -426,7 +424,7 @@ function Index() {
         <section className="pt-10">
           {activeTab === "classes" && <ClassTimetable timetable={timetable} details={scheduleDetails} selectedDay={selectedDay} setSelectedDay={setSelectedDay} updateClass={updateClass} jsonInput={jsonInput} setJsonInput={setJsonInput} jsonError={jsonError} importJson={importJson} />}
           {activeTab === "exams" && <ExamTimetable exams={exams} examSubject={examSubject} setExamSubject={setExamSubject} examDate={examDate} setExamDate={setExamDate} examSyllabus={examSyllabus} setExamSyllabus={setExamSyllabus} addExam={addExam} removeExam={(id) => setExams((current) => current.filter((exam) => exam.id !== id))} />}
-          {activeTab === "study" && <StudyPlan exams={exams} plan={studyPlan} setActiveTab={setActiveTab} timetable={timetable} weekOffset={weekOffset} setWeekOffset={setWeekOffset} />}
+          {activeTab === "study" && <StudyPlan exams={exams} setActiveTab={setActiveTab} timetable={timetable} weekOffset={weekOffset} setWeekOffset={setWeekOffset} />}
           {activeTab === "focus" && <FocusSession days={days} selectedDay={selectedDay} setSelectedDay={setSelectedDay} currentClasses={currentClasses} subjectName={subjectName} focusSubject={focusSubject} setFocusSubject={setFocusSubject} focusHours={focusHours} setFocusHours={setFocusHours} focusNote={focusNote} setFocusNote={setFocusNote} addFocusLog={addFocusLog} focusLogs={focusLogs} />}
         </section>
       </div>
@@ -472,7 +470,7 @@ function ClassTimetable({ timetable, details, selectedDay, setSelectedDay, updat
   </div>;
 }
 
-function ExamTimetable({ exams, examSubject, setExamSubject, examDate, setExamDate, examSyllabus, setExamSyllabus, addExam, removeExam }: { exams: Exam[]; examSubject: string; setExamSubject: (value: string) => void; examDate: string; setExamDate: (value: string) => void; examSyllabus: string; setExamSyllabus: (value: string) => void; addExam: () => void; removeExam: (id: number) => void }) {
+function ExamTimetable({ exams, examSubject, setExamSubject, examDate, setExamDate, examSyllabus, setExamSyllabus, addExam, removeExam }: { exams: Exam[]; examSubject: string; setExamSubject: (value: string) => void; examDate: string; setExamDate: (value: string) => void; examSyllabus: string; setExamSyllabus: (value: string) => void; addExam: () => void; removeExam: (id: string) => void }) {
   return <div><SectionHeading eyebrow="What is coming up" title="Exam timetable" description="Add an exam date and list the syllabus as comma-separated chapters or one topic per line." /><div className="mt-10 grid gap-10 lg:grid-cols-[0.78fr_1.22fr]"><form onSubmit={(event) => { event.preventDefault(); addExam(); }} className="border-t hairline pt-5"><p className="mono-label text-pigment">New exam</p><div className="mt-6 space-y-5"><Field label="Subject"><select value={examSubject} onChange={(event) => setExamSubject(event.target.value)} className="field-control">{subjects.filter((subject) => subject.code !== "—" && subject.code !== "HOLIDAY").map((subject) => <option key={subject.name}>{subject.name}</option>)}</select></Field><Field label="Date"><input required type="date" value={examDate} onChange={(event) => setExamDate(event.target.value)} className="field-control" /></Field><Field label="Syllabus"><textarea value={examSyllabus} onChange={(event) => setExamSyllabus(event.target.value)} placeholder="Current electricity, ray optics, semiconductors" className="field-control min-h-32 resize-y" /></Field><Button type="submit" variant="outline" className="mt-2"><Plus /> Add exam</Button></div></form><div className="border-t hairline pt-5"><p className="mono-label text-pigment">Upcoming exams <span className="text-muted">/ {String(exams.length).padStart(2, "0")}</span></p>{exams.length === 0 ? <EmptyState icon={<CalendarDays />} title="No exams on the desk yet" description="Add the next exam to turn its chapters into a home timetable." /> : <div className="mt-6 divide-y hairline">{exams.map((exam) => <div key={exam.id} className="grid gap-4 py-5 sm:grid-cols-[1fr_140px_34px] sm:items-start"><div><h3 className="display-title text-3xl">{exam.subject}</h3><p className="mt-2 text-xs text-muted">{exam.syllabus || "Syllabus not added yet"}</p></div><div className="mono-label text-pigment">{formatDate(exam.date)}</div><button aria-label={`Remove ${exam.subject} exam`} onClick={() => removeExam(exam.id)} className="text-muted transition-colors hover:text-pigment"><Trash2 className="h-4 w-4" /></button></div>)}</div>}</div></div></div>;
 }
 
