@@ -124,7 +124,7 @@ function mapSubject(raw: string) {
     .filter((entry) => normalized.length >= 2 && (entry.value.includes(normalized) || normalized.includes(entry.value)))
     .sort((a, b) => {
       const score = (value: string) => value.startsWith(normalized) ? 2 : normalized.startsWith(value) ? 1 : 0;
-      return score(b.value) - score(a.value) || b.value.length - a.value.length;
+      return score(b.value) - score(a.value) || a.value.length - b.value.length;
     });
   if (candidates[0]) return candidates[0].code;
   throw new Error(`Unknown subject “${raw}”. Try a subject code or name.`);
@@ -153,6 +153,17 @@ function addDays(key: string, count: number) {
   return localDateKey(date);
 }
 
+function startOfWeek(key: string, weekOffset: number) {
+  const date = dateFromKey(key);
+  date.setDate(date.getDate() - ((date.getDay() + 6) % 7) + weekOffset * 7);
+  return localDateKey(date);
+}
+
+function isWeekday(key: string) {
+  const weekday = dateFromKey(key).getDay();
+  return weekday > 0 && weekday < 6;
+}
+
 function buildHomeSchedule(exams: Exam[], timetable: Record<Day, string[]>) {
   const today = localDateKey(new Date());
   const result = new Map<string, HomeCell[]>();
@@ -161,6 +172,7 @@ function buildHomeSchedule(exams: Exam[], timetable: Record<Day, string[]>) {
     return result.get(date) ?? [];
   };
   const orderedExams = [...exams].filter((exam) => exam.date >= today).sort((a, b) => a.date.localeCompare(b.date));
+  const reservedEvenings = new Set(orderedExams.map((exam) => addDays(exam.date, -1)).filter((date) => date >= today && isWeekday(date)));
 
   for (const exam of orderedExams) {
     const topics = exam.syllabus.split(/[\n,]+/).map((topic) => topic.trim()).filter(Boolean);
@@ -168,12 +180,9 @@ function buildHomeSchedule(exams: Exam[], timetable: Record<Day, string[]>) {
     const examEve = addDays(exam.date, -1);
     const available: Array<{ date: string; slot: number }> = [];
     for (let date = today; date < exam.date; date = addDays(date, 1)) {
-      const weekday = dateFromKey(date).getDay();
-      if (weekday === 0 || weekday === 6) continue;
-      const weekdayName = dateFromKey(date).toLocaleDateString("en-US", { weekday: "long" }) as Day;
-      const isHoliday = Boolean(dayIsOff(timetable[weekdayName] ?? []));
+      if (!isWeekday(date)) continue;
       for (let slot = 0; slot < homeSlots.length; slot += 1) {
-        if (date === examEve && slot === 4) continue;
+        if (slot > 0 && reservedEvenings.has(date)) continue;
         available.push({ date, slot });
       }
     }
@@ -198,7 +207,7 @@ function buildHomeSchedule(exams: Exam[], timetable: Record<Day, string[]>) {
         if (cell) cell.topics.push({ exam, topic, day: index + 1, date: location.date });
       });
     }
-    if (examEve >= today) {
+    if (examEve >= today && isWeekday(examEve)) {
       const eveCells = ensureDate(examEve);
       for (const slot of [1, 2, 3, 4]) {
         const cell = eveCells[slot];
@@ -206,8 +215,7 @@ function buildHomeSchedule(exams: Exam[], timetable: Record<Day, string[]>) {
       }
     }
     for (let date = today; date < exam.date; date = addDays(date, 1)) {
-      const weekday = dateFromKey(date).getDay();
-      if (weekday === 0 || weekday === 6) continue;
+      if (!isWeekday(date)) continue;
       const weekdayName = dateFromKey(date).toLocaleDateString("en-US", { weekday: "long" }) as Day;
       if (dayIsOff(timetable[weekdayName] ?? [])) {
         const cells = ensureDate(date);
@@ -216,6 +224,22 @@ function buildHomeSchedule(exams: Exam[], timetable: Record<Day, string[]>) {
     }
   }
   return result;
+}
+
+function isExam(value: unknown): value is Exam {
+  return isRecord(value) && typeof value["id"] === "string" && typeof value["subject"] === "string" && typeof value["date"] === "string" && typeof value["syllabus"] === "string";
+}
+
+function isFocusLog(value: unknown): value is FocusLog {
+  return isRecord(value) && typeof value["id"] === "string" && typeof value["subject"] === "string" && typeof value["hours"] === "string" && typeof value["note"] === "string";
+}
+
+function isTimetable(value: unknown): value is Record<Day, string[]> {
+  return isRecord(value) && days.every((day) => Array.isArray(value[day]) && value[day].length === periods.length && value[day].every((subject) => typeof subject === "string" && subjects.some((known) => known.code === subject)));
+}
+
+function isScheduleDetails(value: unknown): value is ScheduleDetails {
+  return isRecord(value) && days.every((day) => Array.isArray(value[day]) && value[day].length === periods.length && value[day].every((period) => isRecord(period) && typeof period["time"] === "string"));
 }
 
 function parseScheduleJson(raw: string): { timetable: Record<Day, string[]>; details: ScheduleDetails } {
