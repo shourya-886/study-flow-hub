@@ -3,3 +3,6 @@
 - [x] Add exam planning, study schedule generation, and focus session logging
 - [x] Verify the live preview and resolve any errors
 - [x] Import JSON timetables and show the home study table with clickable chapter details
+- [x] Schedule syllabus topics only before exam dates and reserve exam-eve evenings for revision
+- [x] Use collision-resistant IDs and persist timetable, exams, and focus logs across refreshes
+- [x] Accept subject-code matches despite case and spacing differences
