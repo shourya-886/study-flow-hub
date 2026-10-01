@@ -172,7 +172,7 @@ function buildHomeSchedule(exams: Exam[], timetable: Record<Day, string[]>) {
     return result.get(date) ?? [];
   };
   const orderedExams = [...exams].filter((exam) => exam.date >= today).sort((a, b) => a.date.localeCompare(b.date));
-  const reservedEvenings = new Set(orderedExams.map((exam) => addDays(exam.date, -1)).filter((date) => date >= today && isWeekday(date)));
+  const reservedEvenings = new Set(orderedExams.map((exam) => addDays(exam.date, -1)).filter((date) => date >= today));
 
   for (const exam of orderedExams) {
     const topics = exam.syllabus.split(/[\n,]+/).map((topic) => topic.trim()).filter(Boolean);
@@ -180,7 +180,6 @@ function buildHomeSchedule(exams: Exam[], timetable: Record<Day, string[]>) {
     const examEve = addDays(exam.date, -1);
     const available: Array<{ date: string; slot: number }> = [];
     for (let date = today; date < exam.date; date = addDays(date, 1)) {
-      if (!isWeekday(date)) continue;
       for (let slot = 0; slot < homeSlots.length; slot += 1) {
         if (slot > 0 && reservedEvenings.has(date)) continue;
         available.push({ date, slot });
@@ -207,7 +206,7 @@ function buildHomeSchedule(exams: Exam[], timetable: Record<Day, string[]>) {
         if (cell) cell.topics.push({ exam, topic, day: index + 1, date: location.date });
       });
     }
-    if (examEve >= today && isWeekday(examEve)) {
+    if (examEve >= today) {
       const eveCells = ensureDate(examEve);
       topics.forEach((topic, index) => {
         const slot = 1 + (index % 4);
